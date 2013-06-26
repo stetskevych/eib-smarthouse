@@ -2,7 +2,7 @@ eib-smarthouse
 =========
 
 Contains scripts that I wrote to support running a EIB/KNX based Smart House.
-No actual backend of frontend software here, only support files.
+No actual backend or frontend software here, only support files.
 
 The files herein are free software. They come without any warranty, to
 the extent permitted by applicable law. You can redistribute them
