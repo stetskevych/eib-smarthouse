@@ -1,0 +1,137 @@
+#!/bin/bash
+
+# /etc/rc.d/rc.kennel
+# Control script to start/stop system services
+# Way to call: $service start, $service stop, $service restart
+
+services=( eibd, server.php, eibdog, netdog, smsd.php, fms, fmsadmin )
+serial="20100708AA0010000185"
+drive=/dev/sda
+eibd_method=ip # ip or usb
+eibd_ipaddr=192.168.0.181
+eibd_multicast_dev=eth0
+
+seck() {
+lserial="$(hdparm -i $drive | grep SerialNo | cut -d"=" -f4 | tr -d " ")"
+if ! [ "$serial" = "$lserial" ]; then
+	exit 1; fi
+}
+
+eibd_start() {
+echo "Adding the eibd multicast route..."
+/sbin/route add 224.0.23.12 dev "$eibd_multicast_dev"
+echo "Starting the eibd daemon..."
+if [ "$eibd_method" = ip ]; then
+	/usr/bin/eibd -DTS -c --daemon=/var/log/eibd.log \
+		--listen-tcp ipt:"$eibd_ipaddr"
+elif [ "$eibd_method" = usb ]; then
+	eibd_usbaddr="$(/usr/bin/findknxusb | /bin/awk '{print $2}' | grep -v addr)"
+	/usr/bin/eibd -DTS -c --daemon=/var/log/eibd.log \
+		--listen-tcp usb:"$eibd_usbaddr"
+fi
+if command -v telelogger >/dev/null 2>&1; then
+	echo "Starting the telegram logger..."
+	telelogger >/dev/null 2>&1 &
+fi
+}
+
+eibd_stop() {
+echo "Deleting the eibd multicast route..."
+	/sbin/route del 224.0.23.12
+echo "Stopping the eibd daemon and scripts..."
+	if killall eibd telelogger >/dev/null 2>&1; then
+		echo "Eibd terminated."
+	fi
+}
+
+server.php_start() {
+if [ -x /usr/local/eib/server.php ]; then
+	echo "Starting phpserver..."
+	touch /var/log/server.php.log /var/log/reader.php.log
+	chown eib:eib /var/log/server.php.log /var/log/reader.php.log
+	sudo -u eib /usr/local/eib/server.php >> /var/log/server.php.log 2>&1 &
+else
+       echo "Phpserver not installed."
+fi
+}
+
+server.php_stop() {
+if killall server.php reader.php >/dev/null 2>&1; then
+	echo "Phpserver terminated."
+fi
+}
+
+eibdog_start() {
+	true
+}
+
+eibdog_stop() {
+	true
+}
+
+netdog_start() {
+	/usr/local/bin/netdog >/dev/null 2>&1 &
+}
+
+netdog_stop() {
+if killall netdog >/dev/null 2>&1; then
+	echo "Netdog terminated."
+fi
+}
+
+smsd.php_start() {
+if [ -x /usr/local/eib/sms/smsd.php ]; then
+	echo "Starting smsd..."
+	touch /var/log/smsd.php.log
+	chown eib:eib /var/log/smsd.php.log
+	sudo -u eib /usr/local/eib/sms/smsd.php >>/var/log/smsd.php.log 2>&1 &
+else
+	echo "Smsd not installed."
+fi
+}
+
+smsd.php_stop() {
+if killall smsd.php >/dev/null 2>&1; then
+	echo "Smsd terminated."
+fi
+}
+
+fms_start() {
+if [ -x /opt/adobe/fms/fmsmgr ]; then
+	/opt/adobe/fms/fmsmgr server fms start
+fi
+}
+
+fms_stop() {
+if [ -x /opt/adobe/fms/fmsmgr ]; then
+	/opt/adobe/fms/fmsmgr server fms stop
+fi
+}
+
+fmsadmin_start() {
+if [ -x /opt/adobe/fms/fmsmgr ]; then
+	/opt/adobe/fms/fmsmgr adminserver start
+fi
+}
+
+fmsadmin_stop() {
+if [ -x /opt/adobe/fms/fmsmgr ]; then
+	/opt/adobe/fms/fmsmgr adminserver stop
+fi
+}
+
+case "$2" in
+	start)
+	  [ $1 != netdog ] && seck # allow vpn in any case
+	  $1_start;;
+	stop)
+	  $1_stop;;
+	restart)
+	  $1_stop
+	  sleep 2
+	  $1_start;;
+	*)
+	  echo 'Usage: $service {start|stop|restart}'
+	  echo "Provided services: ${services[@]}"
+	;;
+esac

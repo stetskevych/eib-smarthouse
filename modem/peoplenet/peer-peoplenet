@@ -1,0 +1,28 @@
+ttyUSB0
+#921600
+user 00000000000@people.net.ua
+defaultroute
+usepeerdns
+#debug
+crtscts
+lock
+noauth
+local
+persist
+holdoff 5
+maxfail 0
+#lcp-echo-failure 4
+#lcp-echo-interval 65535
+modem
+#mru 1500
+noccp
+novj
+#novjccomp
+#nopcomp
+#nobsdcomp
+#nodeflate
+#noaccomp
+ipcp-accept-local
+ipcp-accept-remote
+noipdefault
+connect "/usr/sbin/chat -v -f /etc/ppp/chat-peoplenet"

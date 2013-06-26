@@ -1,0 +1,98 @@
+
+PenMount for Ubuntu 8.04
+
+
+Versions
+---------------------------------------------------------------------------
+        Ubuntu   : 8.04 LTS
+  Linux Kernel   : 2.6.24-16-generic
+  X.Org X Server : 1.4.0.90
+
+
+PenMount Support
+---------------------------------------------------------------------------
+  - PenMount 5000 series (USB, low speed)
+  - PemMount 6000 series (USB, full speed)
+  - PemMount 9000 series (Serial, 19200/9600 bps)
+  - PemMount 6000 series (Serial, 19200/9600 bps)
+
+  - PenMount LPC (Flybook A3/V3/V5 series)
+    need penmountlpc kernel module support.
+
+
+
+File Description
+---------------------------------------------------------------------------
+  gCal             - PenMount calibration utility (without UI)
+                     e.g. gCal <0|4|9|16|25>
+  evtest           - Read raw data from /dev/input/eventX for debugging.
+  install.sh       - Install script
+  penmount.dat     - Default calibration data file
+                     It will be created after calibration.
+  penmount.desktop - GNOME menu item entry
+  penmount_drv.so  - X.Org input driver for PenMount
+  penmount.png     - An icon for GNOME menu item
+  pm-setup         - PenMount setup utility. It can configure the PenMount
+                     driver and X configuration file (/etc/X11/xorg.conf)
+  penmount.ini     - Default settings for /etc/X11/xorg.conf
+  README-ubuntu804 - You're reading now.
+
+
+
+Quick Install
+---------------------------------------------------------------------------
+  1) Login as user in Ubuntu login prompt
+  2) Open terminal
+     Applications->Accessories->Terminal
+  3) Come into directory, for example
+     $ cd pmlinux-ubuntu804
+  4) Run install script (root permission)
+     $ sudo ./install.sh
+  5) Config PenMount or using default configurations.
+  6) Restart X window system
+     press Ctrl-Alt-Backspace or Logout
+
+
+Calibration
+---------------------------------------------------------------------------
+  1) Login as user
+  2) In Ubuntu Menu
+     (System) --> Preferences --> PenMount Calibration
+  3) Select calibrate type what you want and press 'Calibrate' button
+  4) Doing calibration
+  5) Touch some red points to finish calibration
+  6) After calibration! The calibration data will be stored at /etc/penmount.dat.
+
+P.S.
+  1) gCal is calibration tool without UI.
+     gCal 0 - standardard calibration
+     gCal [4|9|16|25] - advanced calibration (4 points, 9 points...)
+
+
+Screen Rotation
+---------------------------------------------------------------------------
+  X Server must be supported XRandR v1.2
+
+  1) 90 degree clockwise (RIGHT)
+     ubuntu :~$ sudo xrandr -o right
+
+  2) 90 degree anti-clockwise (LEFT)
+     ubuntu :~$ sudo xrandr -o left
+
+  3) 180 degree clockwise (INVERTED)
+     ubuntu :~$ sudo xrandr -o inverted
+
+  4) 0 degree clockwise (NORMAL)
+     ubuntu :~$ sudo xrandr -o normal
+ 
+
+FAQ
+---------------------------------------------------------------------------
+  None
+
+
+
+
+PenMount
+Nov 29, 2008
+

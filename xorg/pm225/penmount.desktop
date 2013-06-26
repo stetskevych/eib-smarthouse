@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=PenMount Calibration
+Comment=PenMount Calibration Utility
+Exec=gksudo /usr/sbin/gCal 4
+Icon=/usr/share/penmount/penmount.png
+Terminal=false
+Type=Application
+Categories=GNOME;GTK;Settings;HardwareSettings;

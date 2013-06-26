@@ -1,0 +1,23 @@
+This XFree/X.Org driver provides support for touchscreen input devices.
+The driver is actually a evdev driver which supports events for moving in
+absolute coordinates, relative coordinates and events for mouse buttons.
+
+This driver primarily supports TouchKit touchscreens (like the one found in
+Samsung Q1, GIRA/Proface panels and other computers), but may potentially work
+with any device that is not supported by stock Xorg drivers in Slackware.
+
+The bundled calibration tool is currently (for a few years already) broken,
+but manual calibration should be pretty straightforward, just pick the right
+MinX, MinY, MaxX, and MaxY driver parameters in xorg.conf.
+
+You can find your touch screen model by looking at /proc/bus/input/devices.
+This file also lists the event interfaces for the corresponding device, like
+"Handlers=event1" or similar.
+
+To mitigate the problem of event listener numbers being constantly changed
+by udev when new input hardware is added to the system, this driver creates
+a special event listener at /dev/input/evtouch_event for convenient use in your
+configuration.
+
+Please refer to the project page for further installation instructions:
+http://www.conan.de/touchscreen/evtouch.html

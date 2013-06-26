@@ -1,0 +1,19 @@
+# ntp.conf-client
+
+restrict default nomodify notrap noquery
+restrict 127.0.0.1
+
+# -- CLIENT NETWORK ------
+
+# -- OUR TIMESERVERS -----
+server 192.168.0.190 iburst
+server 127.127.1.0 # query local clock
+
+# -- GENERAL CONFIGURATION ---
+
+# Undisciplined Local Clock
+fudge 127.127.1.0 stratum 12 # serve local clock with priority 12
+
+# Drift file
+driftfile /etc/ntp/drift
+broadcastdelay	0.008

@@ -1,0 +1,6 @@
+# 69-customdevice.rules
+# Written by V'yacheslav Stetskevych
+#
+# MTS Connect AnyData ADU-500A
+ATTRS{idVendor}=="16d5",ATTRS{idProduct}=="6502",SYMLINK+="modem_mts_connect"
+ATTRS{idVendor}=="1e2d",ATTRS{idProduct}=="004f",SYMLINK+="modem_gsm"

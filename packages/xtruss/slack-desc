@@ -1,0 +1,19 @@
+# HOW TO EDIT THIS FILE:
+# The "handy ruler" below makes it easier to edit a package description.  Line
+# up the first '|' above the ':' following the base package name, and the '|'
+# on the right side marks the last column you can put a character in.  You must
+# make exactly 11 lines for the formatting to be correct.  It's also
+# customary to leave one space after the ':'.
+
+      |-----handy-ruler------------------------------------------------------|
+xtruss: An easy to use X protocol tracing program.
+xtruss:
+xtruss: It logs everything that passes between the X server and one or more X
+xtruss: client programs. In this it is similar to xmon(1), but intended to
+xtruss: combine xmon's basic functionality with an interface much more similar
+xtruss: to strace(1).
+xtruss:
+xtruss: http://www.chiark.greenend.org.uk/~sgtatham/xtruss/
+xtruss:
+xtruss:
+xtruss:

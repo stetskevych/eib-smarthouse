@@ -1,0 +1,27 @@
+/usr/local/eib/logs/telegrams.log {
+  daily
+  rotate 365
+  compress
+  copytruncate
+  dateext
+}
+
+/var/log/services {
+  monthly
+  rotate 4
+  compress
+  create
+}
+
+/var/log/eibwatch.log {
+  monthly
+  rotate 4
+  compress
+  create
+}
+
+/var/log/mouseup.log {
+  weekly
+  rotate 4
+  create
+}

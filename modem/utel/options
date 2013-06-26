@@ -1,0 +1,23 @@
+# General configuration options for PPPD:
+lock
+defaultroute
+noipdefault
+modem
+/dev/modem
+460800
+crtscts
+# Uncomment the line below for more verbose error reporting:
+#debug
+# If you have a default route already, pppd may require the other side
+# to authenticate itself, which most ISPs will not do.  To work around this,
+# uncomment the line below.  Note that this may have negative side effects
+# on system security if you allow PPP dialins.  See the docs in /usr/doc/ppp*
+# for more information.
+#noauth
+passive
+asyncmap 0
+name " "
+persist
+holdoff 10
+usepeerdns
+maxfail 0

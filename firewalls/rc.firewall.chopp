@@ -1,0 +1,446 @@
+#!/bin/bash
+ 
+#===============================================#
+# V A R I A B L E S				#
+#===============================================#
+ 
+## Interfaces
+WAN_IF="eth0"
+LAN_IF="eth1"
+ 
+## Networks
+LOCAL_LAN="10.0.0.1/24"
+ 
+## Hosts
+SLACK_IP="10.0.0.2"
+VOIP_IP="10.0.0.6"
+ 
+#===============================================#
+# M O D U L E S					#
+#===============================================#
+ 
+modules(){
+   echo -n "Loading Modules..."
+ 
+   modprobe nf_nat_ftp
+   modprobe nf_conntrack_ipv4
+   modprobe nf_nat_sip
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# I N I T I A L I Z E 				#
+#===============================================#
+ 
+## Clear and Flush all the rules from the different chains, tables and qdiscs
+initialize(){
+   echo -n "Initializing..."
+ 
+   ## IPv4
+   for table in raw nat mangle filter; do
+      iptables -t $table --flush
+      iptables -t $table --delete-chain 
+   done
+ 
+   ## IPv6
+   for table in filter; do
+      ip6tables -t $table --flush
+      ip6tables -t $table --delete-chain 
+   done
+ 
+   ## Clean up existing qdisc's
+   {
+      tc qdisc del dev $WAN_IF root
+      tc qdisc del dev $WAN_IF ingress
+   } > /dev/null 2>&1
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# I P v 4  P O L I C Y				#
+#===============================================#
+ 
+## Setting the Default Policies for the chains
+ipv4_policy(){
+   echo -n "Setting IPv4 Default Policies..."
+ 
+   iptables -t filter --policy INPUT $1
+   iptables -t filter --policy FORWARD $2
+   iptables -t filter --policy OUTPUT $3
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# I P v 6  P O L I C Y				#
+#===============================================#
+ 
+## Setting the Default Policies for the chains
+ipv6_policy(){
+   echo -n "Setting IPv6 Default Policies..."
+ 
+   ip6tables -t filter --policy INPUT $1
+   ip6tables -t filter --policy FORWARD $2
+   ip6tables -t filter --policy OUTPUT $3
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# T R A F I C  S H A P I N G			#
+#===============================================#
+shape(){
+   echo -n "Traffic Shaping..."
+ 
+   ## 80% of Max Upload Bandwidth in kbit
+   local UPLINK=4800
+ 
+   ## Setup HTB Qdisc
+   #tc qdisc add dev $WAN_IF root handle 1: htb default 30 r2q 8
+   tc qdisc add dev $WAN_IF root handle 1: htb default 30
+ 
+   ## Setup HTB Classes
+   tc class add dev $WAN_IF parent 1: classid 1:1 htb rate ${UPLINK}kbit ceil ${UPLINK}kbit burst 10k
+   tc class add dev $WAN_IF parent 1:1 classid 1:10 htb rate $(bc <<< "0.2*$UPLINK")kbit ceil ${UPLINK}kbit prio 1
+   tc class add dev $WAN_IF parent 1:1 classid 1:20 htb rate $(bc <<< "0.2*$UPLINK")kbit ceil ${UPLINK}kbit prio 2
+   tc class add dev $WAN_IF parent 1:1 classid 1:30 htb rate $(bc <<< "0.6*$UPLINK")kbit ceil ${UPLINK}kbit prio 3
+ 
+   ## Setup SFQ Qdisc's
+   tc qdisc add dev $WAN_IF parent 1:10 handle 100: sfq perturb 10
+   tc qdisc add dev $WAN_IF parent 1:20 handle 200: sfq perturb 10
+   tc qdisc add dev $WAN_IF parent 1:30 handle 300: sfq perturb 10
+ 
+   ## Create New Chains
+   iptables -t mangle -N PRIORITY_1
+   iptables -t mangle -N PRIORITY_2
+   iptables -t mangle -N PRIORITY_3
+ 
+   ## Setup Priority Chains
+   iptables -t mangle -A PRIORITY_1 -j CLASSIFY --set-class 1:10
+   iptables -t mangle -A PRIORITY_1 -j ACCEPT
+   iptables -t mangle -A PRIORITY_2 -j CLASSIFY --set-class 1:20
+   iptables -t mangle -A PRIORITY_2 -j ACCEPT
+   iptables -t mangle -A PRIORITY_3 -j CLASSIFY --set-class 1:30
+   iptables -t mangle -A PRIORITY_3 -j ACCEPT
+ 
+   ## Priority 1
+   iptables -t mangle -A POSTROUTING -o $WAN_IF -p tcp --tcp-flags ALL ACK -m length --length 10:100 -j PRIORITY_1
+   iptables -t mangle -A POSTROUTING -o $WAN_IF -p tcp --sport 22 -j PRIORITY_1
+   iptables -t mangle -A POSTROUTING -o $WAN_IF -p tcp -m multiport --dports 23,6667 -j PRIORITY_1
+   iptables -t mangle -A POSTROUTING -o $WAN_IF -p icmp --icmp-type echo-request -j PRIORITY_1
+   iptables -t mangle -A POSTROUTING -o $WAN_IF -p tcp -m conntrack --ctstate NEW -j PRIORITY_1
+ 
+   ## Priority 2
+   iptables -t mangle -A POSTROUTING -o $WAN_IF -p tcp -m multiport --dports 80,443,3074 -j PRIORITY_2
+   iptables -t mangle -A POSTROUTING -o $WAN_IF -p udp -m multiport --dports 53,88,3074 -j PRIORITY_2
+ 
+   ## Priority 3 (everything else)
+   iptables -t mangle -A POSTROUTING -o $WAN_IF -j PRIORITY_3
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# M A S Q U E R A D I N G			#
+#===============================================#
+ 
+masq(){
+   echo -n "Masquerading..."
+ 
+   iptables -t nat -A POSTROUTING -o $WAN_IF -s $LOCAL_LAN -j MASQUERADE	
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# S C A N  F I L T E R I N G			#
+#===============================================#
+ 
+scan(){
+   echo -n "Setting Anti-Scan Rules..."
+ 
+   iptables -N LOG_SCAN
+   iptables -A INPUT -i $WAN_IF -p tcp --tcp-flags ALL NONE -j LOG_SCAN	
+   iptables -A INPUT -i $WAN_IF -p tcp --tcp-flags FIN,SYN FIN,SYN -j LOG_SCAN	
+   iptables -A INPUT -i $WAN_IF -p tcp --tcp-flags SYN,RST SYN,RST -j LOG_SCAN	
+   iptables -A INPUT -i $WAN_IF -p tcp --tcp-flags FIN,RST FIN,RST -j LOG_SCAN	
+   iptables -A INPUT -i $WAN_IF -p tcp --tcp-flags FIN,ACK FIN -j LOG_SCAN	
+   iptables -A INPUT -i $WAN_IF -p tcp --tcp-flags PSH,ACK PSH -j LOG_SCAN	
+   iptables -A INPUT -i $WAN_IF -p tcp --tcp-flags ACK,URG URG -j LOG_SCAN	
+   iptables -A INPUT -i $WAN_IF -p tcp ! --syn -m conntrack --ctstate NEW -j LOG_SCAN
+ 
+   iptables -A FORWARD -i $WAN_IF -p tcp --tcp-flags ALL NONE -j LOG_SCAN	
+   iptables -A FORWARD -i $WAN_IF -p tcp --tcp-flags FIN,SYN FIN,SYN -j LOG_SCAN	
+   iptables -A FORWARD -i $WAN_IF -p tcp --tcp-flags SYN,RST SYN,RST -j LOG_SCAN	
+   iptables -A FORWARD -i $WAN_IF -p tcp --tcp-flags FIN,RST FIN,RST -j LOG_SCAN	
+   iptables -A FORWARD -i $WAN_IF -p tcp --tcp-flags FIN,ACK FIN -j LOG_SCAN	
+   iptables -A FORWARD -i $WAN_IF -p tcp --tcp-flags PSH,ACK PSH -j LOG_SCAN	
+   iptables -A FORWARD -i $WAN_IF -p tcp --tcp-flags ACK,URG URG -j LOG_SCAN	
+   iptables -A FORWARD -i $WAN_IF -p tcp ! --syn -m conntrack --ctstate NEW -j LOG_SCAN
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# B R U T E  F O R C E  A T T A C K S		#
+#===============================================#
+ 
+brute_force(){
+   echo -n "Preventing Brute Force Attacks..."
+ 
+   ## Create New Chain
+   iptables -N BRUTE_FORCE
+ 
+   ## FTP/Telnet/SSH
+   iptables -A INPUT -i $WAN_IF -p tcp -m conntrack --ctstate NEW -m multiport --dports 21,22,23 -j BRUTE_FORCE	
+   iptables -A FORWARD -i $WAN_IF -p tcp -m conntrack --ctstate NEW -m multiport --dports 21,22,23 -j BRUTE_FORCE	
+   iptables -A BRUTE_FORCE -m recent --hitcount 2 --rcheck --seconds 15 --name brute_force -m limit --limit 10/min -j ULOG --ulog-prefix "[BRUTE_FORCE DROP]: "	
+   iptables -A BRUTE_FORCE -m recent --hitcount 2 --update --seconds 15 --name brute_force -j DROP	
+   iptables -A BRUTE_FORCE -m recent --set --name brute_force -j RETURN	
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# I N P U T  F I L T E R I N G			#
+#===============================================#
+ 
+input_filter(){
+   echo -n "Setting INPUT Filtering..."
+ 
+   ## Established & Related
+   iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT	
+ 
+   ## Loopback
+   iptables -A INPUT -i lo -j ACCEPT
+ 
+   ## WAN
+   iptables -A INPUT -i $WAN_IF -p tcp -m conntrack --ctstate NEW -m multiport --dports 80,113,443,8080,5060 -j ACCEPT
+   iptables -A INPUT -i $WAN_IF -p icmp -j ACCEPT
+ 
+   ## LAN
+   iptables -A INPUT -i $LAN_IF -s $LOCAL_LAN -j ACCEPT	
+   iptables -A INPUT -i $LAN_IF -s 0.0.0.0 -p udp --dport 67 -j ACCEPT	
+   iptables -A INPUT -i $LAN_IF -s 0.0.0.0 -p udp --dport 21 -j ACCEPT
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# F O R W A R D  F I L T E R I N G		#
+#===============================================#
+ 
+forward_filter(){
+   echo -n "Setting FORWARD Filtering..."
+ 
+   ## Established & Related
+   iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT	
+ 
+   ## LAN
+   iptables -A FORWARD -i $LAN_IF -s $LOCAL_LAN -j ACCEPT	
+ 
+   ## Allow DNAT'd connections
+   iptables -A FORWARD -i $WAN_IF -m conntrack --ctstate DNAT -j ACCEPT
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# P O R T  F O R W A R D I N G			#
+#===============================================#
+ 
+port_forward(){
+   echo -n "Setting Port Forwarding..."
+ 
+   ## http to slack
+#   iptables -t nat -A PREROUTING -i $WAN_IF -p tcp --dport 80 -j DNAT --to-destination $SLACK_IP
+ 
+   ## Bit Torrent
+   iptables -t nat -A PREROUTING -i $WAN_IF -p tcp --dport 6881 -j DNAT --to-destination $SLACK_IP
+ 
+   ## Voip
+ 
+   iptables -t nat -A PREROUTING -i $WAN_IF -p udp --sport 5060 -j DNAT --to-destination $VOIP_IP
+   iptables -t nat -A PREROUTING -i $WAN_IF -p tcp --sport 5060 -j DNAT --to-destination $VOIP_IP
+   iptables -t nat -A PREROUTING -i $WAN_IF -p udp --dport 5060 -j DNAT --to-destination $VOIP_IP	
+   iptables -t nat -A PREROUTING -i $WAN_IF -p tcp --dport 5060 -j DNAT --to-destination $VOIP_IP
+ 
+   ## eduke32
+   iptables -t nat -A PREROUTING -i $WAN_IF -p udp --dport 25000 -j DNAT --to-destination $SLACK_IP   
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# L O G G I N G					#
+#===============================================#
+ 
+logging(){
+   echo -n "Setting Logging..."
+ 
+   ## Don't Log Netbios Packets
+   iptables -A INPUT -p udp -m multiport --dports 137,138 -j DROP	
+   iptables -A FORWARD -p udp -m multiport --dports 137,138 -j DROP	
+ 
+   ## Don't Log DHCP requests from WAN side
+   iptables -A INPUT -i $WAN_IF -p udp --dport 68 -j DROP
+ 
+   ## FORWARD Packets
+   iptables -A FORWARD -m limit --limit 10/min -j ULOG --ulog-prefix "[FORWARD DROP]: "
+   iptables -A FORWARD -j DROP	
+ 
+   ## INPUT Packets
+   iptables -A INPUT -m limit --limit 10/min -j ULOG --ulog-prefix "[INPUT DROP]: "	
+   iptables -A INPUT -j DROP	
+ 
+   ## Port Scan Packets
+   iptables -A LOG_SCAN -m limit --limit 10/min -j ULOG --ulog-prefix "[PORT SCAN]: "	
+   iptables -A LOG_SCAN -j DROP	
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# I P v 6  F I L T E R I N G			#
+#===============================================#
+ 
+ipv6(){
+   echo -n "Setting IPv6 Filtering..."
+ 
+   ## Allow Ident, ICMPv6 and ESTABLISHED connections
+   ip6tables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+   ip6tables -A INPUT -p icmpv6 -j ACCEPT
+   ip6tables -A INPUT -p tcp --dport 113 -j ACCEPT
+ 
+   ## Allow FORWARD from LAN
+   ip6tables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+   ip6tables -A FORWARD -i $LAN_IF -j ACCEPT
+ 
+   ## Logging
+   ip6tables -A INPUT -m limit --limit 10/min -j LOG --log-prefix "[INPUT6 DROP]: "
+   ip6tables -A INPUT -j DROP
+ 
+   ip6tables -A FORWARD -m limit --limit 10/min -j LOG --log-prefix "[FORWARD6 DROP]: "
+   ip6tables -A FORWARD -j DROP	
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# S Y S C T L					#
+#===============================================#
+ 
+sysctl(){
+   echo -n "Setting Sysctl..."
+ 
+   ## Disable martians logging
+   echo 0 > /proc/sys/net/ipv4/conf/all/log_martians          
+   ## Activate the forwarding
+   echo 1 > /proc/sys/net/ipv4/ip_forward                     
+   ## Allow ProxyArp
+#   echo 1 > /proc/sys/net/ipv4/conf/all/proxy_arp
+   echo 1 > /proc/sys/net/ipv4/conf/all/rp_filter
+   ## Don't respond to broadcast pings
+   echo 1 > /proc/sys/net/ipv4/icmp_echo_ignore_broadcasts    
+   ## Disable source routed packets
+   echo 0 > /proc/sys/net/ipv4/conf/all/accept_source_route   
+   ## Disable ICMP Redirect Acceptance
+   echo 0 > /proc/sys/net/ipv4/conf/all/accept_redirects      
+   ## TCP syncookie protection
+   echo 1 > /proc/sys/net/ipv4/tcp_syncookies                 
+   ## Ignore kernel logging of bogus icmp messages
+   echo 1 > /proc/sys/net/ipv4/icmp_ignore_bogus_error_responses
+   ## Set Keepalive time to 1800s == 30min
+   echo 1800 > /proc/sys/net/ipv4/tcp_keepalive_time
+   ## Set Timewait to 30 seconds
+   echo 30 > /proc/sys/net/ipv4/tcp_fin_timeout
+ 
+   echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+}
+ 
+#===============================================#
+# P A C K E T  T R A C E			#
+#===============================================#
+ 
+packet_trace(){
+   if (( $# != 3 )); then
+      echo "ERROR: Not enough parameters.  Usage is: trace <proto> <src/dst> <port>"
+   elif ! [[ "$2" == "src" || "$2" == "dst" ]]; then
+      echo "ERROR: You must specify either 'src' or 'dst' for the port to trace"
+   else
+      echo -n "Packet Tracing Proto <${BRIGHT}${YELLOW}$1${NORMAL}>"
+      if [[ "$2" == "src" ]]; then
+	 echo -n " Src Port <${BRIGHT}${YELLOW}$3${NORMAL}>..."
+	 iptables -t raw -A PREROUTING -p "$1" --sport $3 -m limit --limit 3/sec -j TRACE
+      else
+	 echo -n " Dst Port <${BRIGHT}${YELLOW}$3${NORMAL}>..."
+	 iptables -t raw -A PREROUTING -p "$1" --dport $3 -m limit --limit 3/sec -j TRACE
+      fi
+      echo "${INDENT}${BRIGHT}${GREEN}[ DONE ]${NORMAL}"
+   fi
+}
+ 
+## Colors and Position
+BRIGHT=$(tput bold)
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+NORMAL=$(tput sgr0)
+INDENT=$(tput hpa 50)
+ 
+####################### END OF SCRIPT ###############################
+ 
+start(){
+   modules
+   initialize
+   ipv4_policy DROP DROP ACCEPT
+   ipv6_policy DROP DROP ACCEPT
+   shape
+   masq
+   scan
+   brute_force
+   input_filter
+   forward_filter 
+   port_forward
+   logging
+   ipv6
+   sysctl
+}
+ 
+open(){
+   modules
+   initialize
+   ipv4_policy ACCEPT ACCEPT ACCEPT
+   ipv6_policy ACCEPT ACCEPT ACCEPT
+   shape
+   masq
+   port_forward
+}
+ 
+emerg(){
+   modules
+   initialize
+   ipv4_policy DROP DROP DROP
+   ipv6_policy DROP DROP DROP
+}
+ 
+case "$1" in
+   'start')
+	start
+	;;
+   'open')
+	open
+	;;
+   'trace')
+   	start
+	packet_trace "$2" "$3" "$4"
+	;;
+   'emerg')
+	emerg
+	;;
+   *)
+	start
+	;;
+esac

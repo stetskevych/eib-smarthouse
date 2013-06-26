@@ -1,0 +1,10 @@
+/etc/ppp/options
+persist
+holdoff 10
+usepeerdns
+maxfail 0
+lcp-echo-interval 60
+lcp-echo-failure 3
+
+ln -s /dev/ttyACM0 /dev/modem > rc.local
+ln -sf /etc/ppp/resolv.conf /etc/resolv.conf

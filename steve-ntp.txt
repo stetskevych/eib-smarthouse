@@ -1,0 +1,161 @@
+ 
+* Тема для #ntp is: Support Channel for the NTP Reference Implementation from www.ntp.org. Ask your question and wait (at least 10 minutes) for an answer. Please report bugs at http://bugs.ntp.org/
+* Тема для #ntp  установлена [steve] в Sat May 24 16:27:24 2008
+* #ntp :http://www.ntp.org/
+<slava_dp> how much traffic does ntp take? per 24 hours, for example? is there any info?
+<[steve]> slava_dp: Are you talking about one client? Or a server?
+<[steve]> A client operating at the default maxpoll time of 1024 seconds polls 84 times per 24 hour period.
+<[steve]> that's 168 packets per day
+<slava_dp> [steve], so it's down to less then a megabyte then, I guess.
+<[steve]> or 0.00194 packets per second
+<[steve]> each packet is, IIRC, 64 bytes
+<slava_dp> 10 Kbytes? oh wow. that's tolerable :)
+<[steve]> So the minimum usage would be 11,904 bytes per day 
+<[steve]> That's per remote time server
+<slava_dp> oh, so if I have three servers configured, I will spend about 33Kbytes per day.
+<[steve]> you typically use 4 remote time servers
+<[steve]> It's not even work worrying about
+<[steve]> ... worth ...
+<[steve]> The usage will be higher if ntpd is not operating at maxpoll
+<slava_dp> how can I tell if it is working at maxpoll?
+<[steve]> look at ntpq -p
+<[steve]> minpoll is 64 sec
+<slava_dp> can I specify poll time in the configuration, or is it an automatic value?
+<[steve]> ntpd handles the poll time automatically
+<[steve]> based on a number of factors
+<[steve]> In most cases it is not wise to attempt to override this
+<slava_dp> how long does it take the daemon to go up to maxpoll on average?
+<[steve]> depends
+<[steve]> Depending on the hardware, OS, ambient conditions, network latency/load, etc., it may take as little as an hour or it may take an entire day.
+* chipster ушел (Ping timeout: 240 seconds)
+* chipster (~chipster@unaffiliated/chipster) зашел на канал #ntp
+<slava_dp> at minpoll the daemon will spend ~172Kbytes per server per day.
+<slava_dp> thanks [steve], you have been very helpful, it is very much appreciated :)
+<[steve]> you're welcome slava_dp 
+ 
+* Загружен протокол от Wed Mar 17 16:21:31 2010
+ 
+* Сейчас общаетесь на #ntp
+* Тема для #ntp is: Support Channel for the NTP Reference Implementation from www.ntp.org. Ask your question and wait (at least 10 minutes) for an answer. Please report bugs at http://bugs.ntp.org/
+* Тема для #ntp  установлена [steve] в Sat May 24 16:27:24 2008
+* #ntp :http://www.ntp.org/
+<slava_dp> hey everyone. I'm trying to figure out how linux works with time, summer/winter time in particular. as far as I understand, the kernel (or the libc) will switch to summertime based on the rulefiles. does ntpd do the same?
+<slava_dp> my question may sound confusing, but I had a problem where a computer running ntpd without a connection to the internet did not switch to summertime, while a computer that wasn't running ntpd did so successfully.
+* mike_t ушел (Remote host closed the connection)
+* mike_t (~mike@109.226.93.115) зашел на канал #ntp
+<[steve]> slava_dp: The kernel clock runs in UTC. It does not "switch to summertime."
+<[steve]> NTP also uses UTC.
+<slava_dp> [steve], from this I conclude, that a system that is running ntpd and has no connection to the internet should change to summertime and back just fine, right?
+<[steve]> the system does not change time
+<[steve]> the time is formatted for display by libc using the rules for the shosen time zone.
+<[steve]> s/shosen/chosen/
+<[steve]> NTP needs a time source to discipline your clock.
+<[steve]> This time source can be a remote time server (i.e. another ntpd on your LAN or the Internet)
+<[steve]> This time source can also be a radio clock (e.g. GPS, WWVB, MSF, CHU, etc)
+<[steve]> This time source can also be a high quality oscillator (e.g. Rubidium, Cesium)
+<[steve]> If you don't have a time source then ntpd is not doing anything.
+<slava_dp> but there should be the local clock in the configuration. what does it do?
+<[steve]> oh ... the time source can also be the ACTS dial-up service (using a modem)
+<slava_dp> so many choices for a time source!
+<[steve]> The Undisciplined Local Clock is not a "backup".
+<[steve]> The Undisciplined Local Clock allows an ntpd to claim to be synced even when it isn't.
+<[steve]> The Undisciplined Local Clock is intended to be used by an ntpd which must be able to serve time to others when it has lost all its time sources.
+<slava_dp> to pretend it has authoritative time for the network?
+<slava_dp> I see.
+<[steve]> The Undisciplined Local Clock does not discipline (e.g. stablize, regulate, adjust) the clock.
+<slava_dp> are there any configuration examples for syncing a small lan? Using the Undisciplined Local Clock + pool.ntp.org on the server, and the server as the source for the other computers.
+<[steve]> Didn't your OS provide a sample ntp.conf?
+<[steve]> what version of NTP are you using?
+<slava_dp> There is a sample one, yes. I'm just a little confused with the idea of the network, i. e. stratum numbers etc.
+<[steve]> stratum != network
+<slava_dp> ntpd 4.2.4p8
+<[steve]> The stratum is the number of steps between an ntpd and the reference clock it is ultimately synced to.
+<[steve]> Reference Clocks (e.g. a GPS clock) run at stratum 0
+<[steve]> The ntpd which is physically connected to the GPS runs at stratum 1
+<[steve]> An ntpd synced to the S1 ntpd runs at stratum 2
+<[steve]> and so on
+<[steve]> A simple configuration could be:
+<[steve]> ---
+<[steve]> driftfile /var/lib/ntp/ntp.drift
+<[steve]> tos orphan
+<[steve]> server pool.ntp.org iburst
+<[steve]> server pool.ntp.org iburst
+<[steve]> server pool.ntp.org iburst
+<[steve]> server pool.ntp.org iburst
+<[steve]> ---
+<[steve]> If you prefer to use the Undisciplined Local Clock instead of Orphan Mode replace the "tos orphan" line with "server 127.127.1.0"
+<[steve]> If you wish to control access to this ntpd take a look at http://support.ntp.org/Support/AccessRestrictions
+<slava_dp> thank you very much, [steve], for your help. I might turn round later if I have more questions.
+<[steve]> You're welcome, slava_dp 
+
+
+
+<slava_dp> hi. as far as I understood, I should use orphan mode instead of the undisciplined local clock now, and I should create a mesh network for it to work. is that right?
+* verm__ ушел (*.net *.split)
+* [Danny] ушел (*.net *.split)
+* tannoy ушел (*.net *.split)
+* verm__ (~verm@ntp/developer/amar) зашел на канал #ntp
+* [Danny] (~mayer@ntp/developer/danny) зашел на канал #ntp
+* tannoy (~tannoy@psp2.ntp.org) зашел на канал #ntp
+<[steve]> slava_dp: Orphan Mode allows (the remaining members of) a group of ntpd nodes to autonomously select (i.e. self-select) a leader.
+<slava_dp> [steve], so if I have a server that talks to upstream ntp servers and a client that talks to the server, I should provide the client as an additional peer on the server?
+<slava_dp> and how does orphan mode decide who of the two peers has better time when upstream is no longer available?
+<slava_dp> and should I assign a stratum number to my 'tsc orphan' parameter, or is there a default one?
+<[steve]> The default "orphan stratum" for nodes configured with 'tos orphan' is 5.
+<[steve]> When that node's stratum drops below the "orphan stratum" the node switches to orphan mode.
+<[steve]> The leader of a group of orphans is selected based on a value randomly generated at start up.
+<[steve]> The nodes have no way of determining which clock is "better".
+<[steve]> In the case of [remote time servers] <-> [LAN time server] <-> [local clients]
+<[steve]> where you want the local clients to always use the LAN time server
+<[steve]> then only the LAN time server should be configured with Orphan Mode or the Undisciplined Local Clock.
+<slava_dp> ok. so I have the server in orphan mode and the local clients just have one 'server' config parameter pointing to it. will that be correct?
+<[steve]> As long as you can rely on your LAN time server to always be available.
+<slava_dp> what happens if the LAN time server is down?
+<[steve]> then the clients have no one to follow
+<[steve]> what are the clients? workstations ... servers ...
+<slava_dp> I will have just one client, a server with no access to the internet.
+<slava_dp> possibly more servers like this in future.
+<[steve]> so you have two servers ... one of which is the LAN time server
+<[steve]> Or are you telling me that this is a "time island" 
+<slava_dp> [steve], yes, I have two servers, one of them is the LAN time server, and it has an internet connection. another server (or servers in future) doesn't have an internet connection but it can synchronize time with the LAN ntp server.
+<[steve]> ok
+* mike_t ушел (Remote host closed the connection)
+<[steve]> Are regular internet outages a problem?
+<slava_dp> yes, there might be no internet at all sometimes.
+<[steve]> When ntpd loses all of its time sources it continues to discipline the clock using the last known frequency correction.
+<slava_dp> that's fine.
+<[steve]> So, if you configure your LAN time server (with either Orphan Mode or the Undisciplined Local Clock) it will continue to serve time to the its clients ... however the LAN time servers clock will eventually drift.
+<[steve]> ntpd, by itsself, can not automagically make your clocks tick at exactly one second per second.
+<[steve]> now
+<slava_dp> that's fine too. should I configure the ntp client machine with the Undisciplined Local Clock so that ntpd on it keeps disciplining the clock when the LAN server goes down?
+<[steve]> no
+<[steve]> that's the wrong thing to do
+<[steve]> the only reason to use either Orphan Mode or the Undisciplined Local Clock on a node is when that node needs to be able to serve time to others.
+<slava_dp> oh, I see.
+* jnperlin__ (~jnperlin@pD9E23B6F.dip.t-dialin.net) зашел на канал #ntp
+<slava_dp> so when the client ntpd loses the only peer it had, the LAN server, will it still run?
+<[steve]> Orphan Mode is a bit safer because it is self organizing.
+<[steve]> When ntpd loses all of its time sources it continues to discipline the clock using the last known frequency correction.
+<slava_dp> right :-)
+<slava_dp> then I think I have all the info.
+<slava_dp> thanks a lot for clarifying all this for me.
+<[steve]> If you want to prepare for the future (when you will have more servers) and want them to always be able to select a leader (even when your LAN time server goes away), then you want to start now setting up Orphan Mode.
+<slava_dp> when I run my servers in Orphan Mode, should I do a mesh topology among them?
+* jnperlin_ ушел (Ping timeout: 276 seconds)
+<[steve]> You have to.
+<[steve]> If you want all of the nodes to be potential servers.
+<slava_dp> so every node has 'server' directives for every other server.
+<[steve]> that's one way
+<[steve]> you could make all of the nodes broadcast servers and broadcast clients.
+<[steve]> or use multicast
+<[steve]> or use manycast
+<slava_dp> ok, I see.
+<[steve]> (any association mode will work)
+<slava_dp> what if I make the two servers I have now to be Orphan Mode peers?
+<slava_dp> so that when there is no internet they could choose who will be the server.
+<slava_dp> does that give any benefit?
+<[steve]> I've never tried using peer associations with Orphan Mode.
+<[steve]> for two reasons
+<[steve]> 1) peer associations are slow to establish
+<[steve]> 2) configuration complexity
+<[steve]> I prefer to use one of the *cast modes because it allows to to add nodes without changing everyone's config file

@@ -1,0 +1,69 @@
+#!/bin/bash
+# vncstart
+#5901	stream	tcp	nowait	viewer	/usr/local/bin/vncstart vncstart
+#5902	stream	tcp	nowait	viewer	/usr/local/bin/vncstart vncstart remote
+#log() { LANG=C echo "$(date)": "$1" >>/var/log/vncstart.log; }
+scriptname="$(basename $0)"
+log() { logger -p local6.info -t "$scriptname" "$1"; }
+calculate_runtime() {
+	runtime="$SECONDS"
+	mins=$((runtime/60))
+	secs=$((runtime%60))
+}
+
+XVNC=/usr/local/bin/Xvnc
+FLASHPLAYER=/usr/local/bin/flashplayer
+MOVIE=/usr/local/eib/visual/visual.swf 
+export HOME=/home/viewer
+
+if [ "$1" = "remote" ]; then
+	# Remote connections
+	conntype="remote"
+	screensize="800x600"
+	if [ ! -e /tmp/.X4-lock ]; then
+		screennum=":4"
+	elif [ ! -e /tmp/.X5-lock ]; then
+		screennum=":5"
+	fi
+else
+	# LAN connections
+	conntype="local"
+	screensize="1024x724"
+	if [ ! -e /tmp/.X1-lock ]; then
+		screennum=":1"
+	elif [ ! -e /tmp/.X2-lock ]; then
+		screennum=":2"
+	elif [ ! -e /tmp/.X3-lock ]; then
+		screennum=":3"
+	fi
+fi
+
+if [ -z "$screennum" ]; then
+	log "Boo! No free $conntype slots!"; exit 1; fi
+
+log "Starting $conntype screen $screennum at $screensize"
+export DISPLAY="$screennum"
+
+if usleep 100000; then
+	xmodmap -e 'pointer = 1 2 4 3 5'
+	matchbox-window-manager >/dev/null 2>&1 &
+	"$FLASHPLAYER" "$MOVIE" >/dev/null 2>&1
+	calculate_runtime
+	log "Stopping $conntype screen $screennum at $screensize. Runtime $mins mins, $secs secs."
+fi &
+
+"$XVNC" "$screennum" \
+-inetd \
+-desktop SmartHouse \
+-geometry "$screensize" \
+-ac \
+-nolisten tcp \
+-securitytypes none \
+-AcceptKeyEvents=off \
+-SendCutText=off \
+-AcceptCutText=off \
+-IdleTimeout=0 \
+-DeferUpdate=0 \
+-fp "/usr/share/fonts/misc/,/usr/share/fonts/Type1/,/usr/share/fonts/75dpi/"
+
+#done

@@ -1,0 +1,78 @@
+#!/bin/sh
+
+# /etc/rc.d/rc.eib
+# Start/stop/restart the eibd daemon.
+
+USB="no"
+KNXIP="192.168.0.181"
+
+secure_check() {
+
+serial="S03WJ20L693271"
+lserial="$(hdparm -i /dev/root | grep SerialNo | cut -d"=" -f4 | tr -d " ")"
+
+if [ "$serial" = "$lserial" ]; then
+  eib_start
+else
+  exit 1
+fi
+}
+
+eib_start() {
+echo "Adding a multicast route for eibd..."
+/sbin/route add 224.0.23.12 dev eth0
+
+echo "Starting the eibd daemon..."
+if [ "$USB" = "no" ]; then
+	# IP Tunnelling backend ================================================
+	/usr/bin/eibd -DTS -c --daemon=/var/log/eibd.log --listen-tcp ipt:$KNXIP
+else
+	# USB backend ==========================================================
+	KNXUSB="$(/usr/bin/findknxusb | /bin/awk '{print $2}' | grep -v addr)"
+	/usr/bin/eibd -DTS -c --daemon=/var/log/eibd.log --listen-tcp usb:$KNXUSB
+fi
+
+sleep 3
+if pgrep eibd >/dev/null 2>&1; then
+	# start telelogger
+	if command -v telelogger.sh >/dev/null 2>&1; then
+		telelogger.sh >/dev/null 2>&1 &
+	fi
+	# start php toolkit
+	if [ -x /usr/local/eib/server.php ]; then
+		sudo -u eib /usr/local/eib/server.php >> /var/log/server.php.log 2>&1 &
+		exit 0
+	else
+		echo "server.php not found"
+		exit 1
+	fi
+else
+	echo "failed to start eibd"
+	exit 1
+fi
+}
+
+eib_stop() {
+  echo "Deleting the eibd multicast route..."
+  /sbin/route del 224.0.23.12
+  echo "Stopping the eibd daemon and scripts..."
+  killall eibd telelogger.sh reader.php server.php > /dev/null 2>&1
+}
+
+case $1 in
+  start)  
+    eib_start
+   ;;
+  stop)
+    eib_stop
+   ;;
+  restart)
+    eib_stop
+    sleep 2
+    eib_start
+   ;;
+  *) 
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+   ;;
+esac 

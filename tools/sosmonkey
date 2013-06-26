@@ -1,0 +1,71 @@
+#!/bin/bash
+#
+# sosmonkey version 1.0 /zp-panel/ 2010-07
+# Emergency exit for the flash player. Press the screen corners to restart.
+# Written by V'yacheslav Stetskevych, 2009.
+
+if ! [ -t 0 ]; then
+	exec >/dev/null 2>&1 # be quiet in a non-interactive shell
+fi
+
+infile=/tmp/xtruss-out
+export DISPLAY=${DISPLAY:-:0.0}
+
+log() {
+	if ! [ -t 0 ]; then # log to syslog
+		logger -t sosmonkey -p local6.info -- "$1"
+	else # log to terminal
+		echo "$(/bin/date "+%F %T"): $1"
+	fi
+}
+
+round() {
+	[ -z "$1" ] && return
+	echo $((($1+100)/200*200))
+}
+
+get_coords() {
+if command -v xdpyinfo >/dev/null 2>&1; then
+	absx=$(round "$(xdpyinfo | grep dimensions: | \
+		awk {'print $2'} | cut -d 'x' -f1)")
+	absy=$(round "$(xdpyinfo | grep dimensions | \
+		awk {'print $2'} | cut -d 'x' -f2)")
+else
+	log "Error: xdpyinfo not found."
+	exit 1
+fi
+}
+
+get_coords
+
+count=0
+xarray=(0 "$absx" "$absx" 0)
+yarray=(0 0 "$absy" "$absy")
+echo "xarray is ${xarray[@]}"
+echo "yarray is ${yarray[@]}"
+
+# the infile does not exist yet; it will be created by xtruss when X starts
+
+while read -r line; do
+
+if ! grep -q "ButtonPress" <<< "$line"; then continue; fi
+
+cordx=$(round "$(cut -d"," -f5 <<< "$line" | cut -d"=" -f2)")
+cordy=$(round "$(cut -d"," -f6 <<< "$line" | cut -d"=" -f2)")
+if [ "${xarray[$count]}" -eq "$cordx" ] && [ "${yarray[$count]}" -eq "$cordy" ]
+then
+	((count += 1))	
+else
+	((count = 0))
+fi
+echo "$cordx $cordy"
+echo "$count"
+if [ "$count" -gt 3 ]; then
+	((count = 0))
+	log "Killed."
+	#DISPLAY=:0.0 gqview -f /usr/local/eib/visual/wait.png >/dev/null 2>&1 &
+	#sudo /etc/rc.d/rc.inet1 wlan0_restart >/dev/null 2>&1
+	killall -9 flashplayer
+fi
+
+done < <(tail -F "$infile" 2>/dev/null)

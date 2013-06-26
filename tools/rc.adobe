@@ -1,0 +1,18 @@
+#!/bin/sh
+
+fms_run() {
+if [ -x /opt/adobe/fms/fmsmgr ]; then
+	/opt/adobe/fms/fmsmgr server fms $1
+	sleep 2
+	/opt/adobe/fms/fmsmgr adminserver $1
+fi
+}
+
+case "$1" in
+start|stop|restart)
+	fms_run $1
+;;
+*)
+	echo "$0 {start|stop|restart}"
+;;
+esac

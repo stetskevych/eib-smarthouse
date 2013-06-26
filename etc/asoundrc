@@ -1,0 +1,58 @@
+pcm.record_left {
+    type dsnoop
+    ipc_key 4096
+    ipc_perm 0666
+    slave {
+        pcm "hw:0,0"
+        channels 2
+    }
+    bindings.0  0
+}
+pcm.record_right {
+    type dsnoop
+    ipc_key 8192
+    ipc_perm 0666
+    slave {
+        pcm "hw:0,0"
+        channels 2
+    }
+    bindings.0  1
+}
+#pcm.aec {
+#    type speex
+#    slave.pcm "record_right"
+#    frames 128
+#    denoise 0
+#    agc 1
+#    echo 1
+#    filter_length 8192
+#    agc_level 8000
+#    dereverb 0
+#    dereverb_decay 0
+#    dereverb_level 0
+#}
+pcm.aec {
+    type speex
+    slave.pcm "record_right"
+#    frames 128
+    denoise 0
+#    agc 1
+    echo 1
+#    filter_length 8192
+#    agc_level 8000
+#    dereverb 0
+#    dereverb_decay 0
+#    dereverb_level 0
+}
+
+pcm.!default {
+	type asym
+	playback.pcm {
+		type plug
+		slave.pcm "hw:0,0"
+	}
+	capture.pcm {
+		type plug
+		slave.pcm "aec"
+	}
+}

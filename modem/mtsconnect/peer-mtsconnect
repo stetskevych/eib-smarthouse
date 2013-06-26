@@ -1,0 +1,7 @@
+/dev/ttyUSB0 230400 crtscts modem
+noccp novj
+connect "/usr/sbin/chat -e -v -f /etc/ppp/chat-mtsconnect"
+noauth user mobile remotename mtsconnect
+usepeerdns defaultroute
+debug updetach
+persist holdoff 10 maxfail 0

@@ -1,0 +1,53 @@
+#!/bin/bash
+# usbverify
+# if $device is not present, reboot. repeat up to $maxstate times.
+scriptname="$(basename $0)"
+log() { logger -p local6.info -t "$scriptname" "$1"; }
+
+dev=( /dev/easycap0 /dev/ttyUSB0 )
+file="/usbverify.state"
+maxstate="3"
+
+checkdev() {
+	for device in "${dev[@]}"; do
+		[ -e "$device" ] || return 1;
+	done
+}
+
+getstate() {
+	if [ -f "$file" ]; then
+		read -r cycle < "$file"
+		echo "$cycle"
+	else
+		echo 0
+	fi
+}
+
+setstate() {
+	if [ "$1" -eq 0 ]; then
+		rm "$file" >/dev/null 2>&1
+	else
+		echo "$1" > "$file"
+	fi
+}
+
+#main
+if checkdev; then # woohoo, devices are present!
+	log "Devices ${dev[*]} present, no need to reboot"
+	log "Continuing to boot, resetting state to 0."
+	setstate 0
+	exit 0 # nothing to do, exit
+fi
+
+state="$(getstate)"
+if [ "$state" -lt "$maxstate" ]; then
+	((state++))
+	setstate "$state"
+	log "Device $device NOT PRESENT. Rebooting, state $state."
+	sleep 300; shutdown -r now
+else
+	setstate 0
+	log "Device $device NOT PRESENT, but we reached MAXSTATE=$maxstate"
+	log "Continuing to boot, resetting state to 0."
+fi
+#done

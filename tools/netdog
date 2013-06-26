@@ -1,0 +1,150 @@
+#!/bin/bash
+# netdog, written by V'yacheslav Stetskevych
+# Watch and restart internet and vpn
+
+# ChangeLog:
+# === 20101223 ===
+# * Code refactoring, added gsmmodem, provider and modemdevice variables.
+# === 20100929 ===
+# * Added logging priority, so it now works.
+# === 20100730 ===
+# * Initial split from eibwatch2.sh, rename to netdog.
+# * Minor rewrites and checks.
+# * Check for gammu existense when starting.
+# === 20100715 ===
+# * If no modem connected, make NO attempt to restart stuff.
+# * Launch openvpn with '--writepid' and check the pidfile, because pgrep fails
+
+# TODO: Future development: dual ppp + static.
+
+### BEGIN CONFIGURATION BLOCK ##
+pollinterval="180" # in seconds
+vpnpid="/var/run/openvpn.pid"
+#modemdevice="/dev/ttyACM?"
+modemdevice="/dev/ttyUSB0"
+provider="peer-peoplenet"
+gsmmodem=0
+### END CONFIGURATION BLOCK ###
+
+# Service variables
+fail=0
+failseq=0
+modemresetseq=1
+scriptname="$(basename $0)"
+# Redirect all the script output in case we get errors
+#exec 1>/var/log/netdog.out 2>&1
+
+log() {
+if [ -t 0 ]; then # interactive shell
+	echo "$(/bin/date "+%F %T"): $1"
+else
+	logger -p local6.info -t "$scriptname" "$1"
+fi
+}
+
+check_prerequisites() {
+if [ "$gsmmodem" = 1 ]; then
+	if ! command -v gammu >/dev/null 2>&1; then
+		log "Error: gammu not installed. Exiting now."
+		exit 1
+	fi
+fi
+}
+
+ping_probe() {
+for ((i=0; i<6; i++)); do
+	if ping -c1 www.google.com >/dev/null; then
+		return 0 # ping successful!
+	else
+		# the connection might be flapping at the moment,
+		# so we wait and try again
+		sleep 10
+	fi
+done
+return 1 # all pings failed
+}
+
+modem_exists() {
+ln -sf "$modemdevice" /dev/modem
+if ! [ -e "$(readlink /dev/modem)" ]; then
+	[ "$nomodem" ] && return 1
+	# The next message is only printed one time per modem failure.
+	log "modem_exists(): No modem connected. Halting operations."
+	nomodem=1 # flag to indicate that modem is already not present
+	return 1
+else
+	unset nomodem; # the device is back!
+	return 0
+fi
+}
+
+modemreset() {
+if gammu reset hard; then
+	log "modemreset(): Modem reset successful!"
+	modemresetseq=1
+	sleep 25
+
+	if ! modem_exists; then return 1; fi
+
+	log "modemreset(): Starting pppd."
+	pppd call "$provider" >/dev/null 2>&1 &
+	kill -USR1 "$(cat $vpnpid)"
+else
+	log "modemreset(): Modem reset NOT successful!"
+	((modemresetseq+=1))
+fi
+}
+
+inet_check() {
+if ! modem_exists; then return 1; fi
+
+if ! kill -0 "$(cat $vpnpid)" >/dev/null 2>&1; then
+	log "inet_check(): openvpn is not running. Starting it."
+	openvpn --daemon --config /etc/openvpn/openvpn.conf --writepid "$vpnpid"
+fi
+
+if ! ping_probe; then # the connection does not work
+	if pgrep pppd >/dev/null 2>&1; then
+		log "inet_check(): ping not successful. Stopping pppd..."
+		killall pppd >/dev/null 2>&1
+		sleep 10
+		pgrep pppd >/dev/null 2>&1 && \
+			{ killall -9 pppd >/dev/null 2>&1 # kill if still runs
+			log "inet_check(): Killed pppd! o_o"; }
+		sleep 5
+		if [ "$gsmmodem" = 1 ]; then # reset the gsm modem
+			log "inet_check(): Resetting modem." 
+			modemreset
+		else # fire up pppd straight away
+			log "inet_check(): Starting pppd."
+			pppd call "$provider" >/dev/null 2>&1 &
+		fi
+	elif [ "$modemresetseq" -gt 1 ]; then
+		log "inet_check(): Resetting modem (${modemresetseq}th time)."
+		modemreset
+	else
+		log "inet_check(): pppd is not running. Starting it."
+		pppd call "$provider" >/dev/null 2>&1 &
+	fi
+fi
+}
+
+inet_start() {
+if ! modem_exists; then return 1; fi # don't start if no modem available
+if ! pgrep pppd >/dev/null 2>&1; then
+	log "Calling provider..."
+	pppd call "$provider" >/dev/null 2>&1 & pppstarted=1; fi
+[ -z "$pppstarted" ] && log "$scriptname: Internetz seem to be running."
+if ! kill -0 "$(cat $vpnpid)" >/dev/null 2>&1; then
+	log "Starting VPN..."
+	modprobe tun >/dev/null 2>&1
+	openvpn --daemon --config /etc/openvpn/openvpn.conf --writepid "$vpnpid"
+elif [ "$pppstarted" = "1" ]; then kill -USR1 "$(cat $vpnpid)"; fi
+}
+
+# main
+inet_start
+while sleep "$pollinterval"; do
+	inet_check
+done
+# end main

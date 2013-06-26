@@ -1,0 +1,120 @@
+#!/bin/bash
+# eibdog, written by V'yacheslav Stetskevych
+# Watch and restart daemon stuff
+
+# ChangeLog:
+# === 20100730 ===
+# * Added logging via syslog (temporary version)
+# === 20100729 ===
+# * Initial split from eibwatch2.sh
+
+# TODO: split eibd, server.php + reader.php, smsd
+# and call each restart separately as rc.kennel smsd.php_restart
+# TODO: port features from marathon on zp-panel
+
+### BEGIN CONFIGURATION BLOCK ##
+pollinterval="60" # in seconds (30, 60, 120 work well)
+monitored=(eibd server.php reader.php smsd.php)
+timesync=1 # sync time over knx
+### END CONFIGURATION BLOCK ###
+
+# Service variables
+readertimeout=$(( 360 / $pollinterval )) # reader.php needs 6 minutes to init
+readertimeout_counter="$readertimeout"
+fail=0
+failseq=0
+failed=( )
+times=( )
+scriptname="$(basename $0)"
+# Redirect all not logged script output to track errors
+exec 1>>/var/log/eibdog.out 2>&1
+
+log() {
+if [ -t 0 ] then # interactive shell
+	echo "$(/bin/date "+%F %T"): $1"
+else
+	logger -p local6.info -t "$scriptname" -- "$1"
+fi
+}
+
+timesync() {
+php /usr/local/eib/timesync.php &
+}
+
+service_check() {
+if [ "${#monitored[@]}" = 0 ]; then return; fi # nothing to monitor
+for (( index=0; index=${#monitored[@]}; index++ )); do
+	service="${monitored[$index]}"
+	pid="$(pgrep $service)"
+	if [ "$pid" != "" ] && kill -0 "$pid" >/dev/null 2>&1; then
+		continue # this one works, nothing to do
+	elif [ "$service" = "reader.php" ] && \
+		[ "$readertimeout_counter" -ne 0 ]; then
+		continue
+		# else -- a service is dead
+		
+		log "service_check(): $service has failed."; fail=1
+	fi
+done
+
+for service in "${monitored[@]}"; do # check every service
+	pid=$(pgrep "$service")
+	if [ "$pid" != "" ] && kill -0 "$pid" >/dev/null 2>&1; then
+		continue # this one works, nothing to do
+	else
+		# give reader some time to start, don't set the fail bit yet
+		if [ "$service" = "reader.php" -a \
+		"$reader_just_restarted" = 1 ]; then continue; fi
+		log "service_check(): $service has failed."; fail=1
+	fi
+done
+
+((readertimeout_counter--))
+reader_just_restarted=0 # clear the restart bit
+
+if [ "$fail" == "1" ]; then # at least one service has failed
+	((failseq += 1))
+	log "service_check(): Failing sequence -- $failseq."
+
+	if [ "$failseq" -eq "3" ]; then
+		log "service_check(): Forcing restart."
+		failseq=0
+		service_restart
+		reader_just_restarted=1
+	fi
+else
+	failseq=0 # apparently failing has stopped
+fi
+
+fail=0 # reset fail status for the next check cycle
+
+}
+
+service_restart() {
+log "service_restart(): Restarting services..."
+/etc/rc.d/rc.eib restart && \
+log "service_restart(): Success." || log "service_restart(): Failure."
+}
+
+service_start() {
+log "$scriptname: Starting."
+
+for service in "${services[@]}"; do # check if the guys are running
+	pgrep "$service" >/dev/null 2>&1 || notrunning=1
+done
+
+if [ "$notrunning" = 1 ]; then # (re-)starting the services for good measure
+	log "$scriptname: Launching rc.eib."
+	/etc/rc.d/rc.eib stop
+	/etc/rc.d/rc.eib start
+	reader_just_restarted=1 # let reader.php initialize
+else
+       log "$scriptname: Services seem to be running."
+fi
+}
+exit
+service_start
+while sleep "$interval"; do
+	[ "$timesync" = 1 ] && timesync
+	[ "$eibwatch" = 1 ] && service_check
+done

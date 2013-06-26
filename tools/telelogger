@@ -1,0 +1,36 @@
+#!/bin/bash
+#
+# Log all the telegrams on the bus + rotate logs
+
+basename="$(basename $0)"
+progname="${basename%.*}"
+logdir="/usr/local/eib/logs_${progname}"
+logfile="${progname}.log"
+fulllogpath="${logdir}/${logfile}"
+
+# Create logdir 
+if ! [ -d "$logdir" ]; then
+	mkdir "$logdir"
+	chown eib:eib "$logdir"
+fi
+# Create logfile
+	touch "$fulllogpath"
+	chown eib:eib "$fulllogpath"
+# Create logrotate rules
+cat > /etc/logrotate.d/${progname} << _EOT_
+${fulllogpath} {
+daily
+rotate 365
+compress
+copytruncate
+dateext
+}
+_EOT_
+
+#main
+while :; do # restart groupsocketlisten if it fails somehow
+echo "============ (Re)-starting logging. ============" >> "$fulllogpath"
+while read -r line; do # read from groupsocketlisten
+	echo "$(/bin/date '+%F %T') $line" >> "$fulllogpath"
+done < <(groupsocketlisten ip:localhost)
+done

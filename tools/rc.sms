@@ -1,0 +1,38 @@
+#!/bin/sh
+
+# /etc/rc.d/rc.sms
+# Start/stop/restart the smsd daemon
+
+smsd_start() {
+if [ -f /usr/local/eib/sms/smsd.php ]; then
+	echo "Starting smsd..."
+	sudo -u eib /usr/local/eib/sms/smsd.php >>/var/log/smsd.php.log 2>&1 &
+else
+	echo "Smsd not found."
+fi
+}
+
+smsd_stop() {
+if killall smsd.php >/dev/null 2>&1; then
+	echo "Smsd terminated."
+else
+	echo "Smsd was not running."
+fi
+}
+
+case "$1" in
+	start)
+	  smsd_start
+	;;
+	stop)
+	  smsd_stop
+	;;
+	restart)
+	  smsd_stop
+	  smsd_start
+	;;
+	*)
+	  echo "Usage: $0 {start|stop|restart}"
+	  exit 1
+	;;
+esac

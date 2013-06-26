@@ -1,0 +1,85 @@
+#!/bin/bash
+# marathon: Listen for incoming connections and run defined commands
+# Written by V'yacheslav Stetskevych, 2010
+# Version 0.1 20100705
+
+# This script can use either inetd or nc.
+# If $1 is "inetd" or "nc-go", just read stdin and do the job.
+# If $1 is "nc", dispatch nc on that port, make it launch this same script
+# with the parameter "nc-go" and do the job.
+
+scriptname="$0"
+basenam() {
+	echo "${scriptname##*/}"
+}
+
+if [ "$(id -u)" -eq 0 ]; then
+	log "ERROR: Don't run me as root, create a user and use sudo."
+	log "Exiting."
+	exit 1
+fi
+
+log() {
+	if ! [ -t 0 ]; then # log to syslog
+		logger -t "$(basenam)" -p local6.info -- "$1"
+	else # log to terminal
+		echo "$(/bin/date "+%F %T"): $1"
+	fi
+}
+
+process_data() {
+	read -r command;
+	[ -z "$command" ] && return
+	case "$command" in
+		date)
+			log "Command execute request: date"
+			date
+			echo OK
+			;;
+		screen-on)
+			log "Command execute request: screen-on"
+			DISPLAY=:0.0 xset dpms force on
+			echo OK
+			;;
+		screen-off)
+			log "Command execute request: screen-off"
+			DISPLAY=:0.0 xset dpms force off
+			echo OK
+			;;
+		*)
+			log "Illegal command request: $command"
+			echo INVALID
+			;;
+	esac
+}
+
+process_data
+
+##port=${port:-55555}
+##method="$1"
+##case "$method" in
+##	inetd)
+##		log "Starting $(basenam) using the method: $method"
+##		process_data
+##		;;
+##	nc)
+##		log "Starting $(basenam) using the method: $method"
+##		nc -l -p "$port" -e "$0" &
+##		exit 0
+##		;;
+##	"")
+##		nc -l -p "$port" -e "$0" &
+##		process_data
+##		exit 0
+##		;;
+##	*)
+##		log "Usage: [port=value] $(basenam) {inetd|nc}"
+##		exit 1
+##		;;
+##esac	
+
+# Original nclisten.sh which served as an example.
+#export port=${port:-$1} # inherit $1 as port
+#nc -l -p "$port" -e "$0" & # await further connections on this port
+## do the work on the 2nd+ invocation
+#[ "$1" ] || { echo -n "triggered date: "; date; }

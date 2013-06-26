@@ -1,0 +1,11 @@
+#!/bin/sh
+
+matchbox-window-manager &
+
+xhost + localhost
+sosmonkey.sh >/dev/null &
+
+while :; do
+xtruss -e requests=none -e events=ButtonPress -o /tmp/xtruss-out \
+flashplayer /usr/local/eib/visual/visual.swf
+done

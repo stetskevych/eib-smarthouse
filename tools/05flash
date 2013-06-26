@@ -1,0 +1,17 @@
+#!/bin/sh
+# Restart flashplayer on resume from suspend
+
+. "${PM_FUNCTIONS}"
+
+case "$1" in
+	hibernate|suspend)
+		DISPLAY=:0.0 gqview -f /usr/local/eib/visual/wait.png >/dev/null 2>&1 &
+		/etc/rc.d/rc.inet1 wlan0_stop >/dev/null 2>&1 || true
+		;;
+	thaw|resume)
+		/etc/rc.d/rc.inet1 wlan0_start >/dev/null 2>&1 || true
+		killall flashplayer >/dev/null 2>&1 || true
+		killall gqview >/dev/null 2>&1 || true
+		;;
+	*) exit $NA ;;
+esac
